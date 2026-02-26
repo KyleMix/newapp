@@ -16,7 +16,9 @@ public class HangoutWorld : ModuleRules
             "UMG",
             "Slate",
             "SlateCore",
-            "NetCore"
+            "NetCore",
+            "OnlineSubsystem",
+            "OnlineSubsystemUtils"
         });
     }
 }

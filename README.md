@@ -1,129 +1,147 @@
-# HangoutWorld (UE5 C++ Starter Prototype)
+# HangoutWorld (UE5 C++ Networking Prototype)
 
-## Scope
-This repository provides a starter Unreal Engine 5 C++ project skeleton for an MMO-style social hangout app foundation.
+This refactor keeps listen-server play in editor working while aligning architecture with dedicated-server expectations.
 
-## Phase 1 Plan (Implemented)
-1. Create UE5 C++ project shell (`HangoutWorld`) and folder conventions.
-2. Add core multiplayer gameplay classes (GameMode, GameState, PlayerState, PlayerController, Character, GameInstance).
-3. Implement Host/Join flow for listen server setup.
-4. Implement replicated display names via `PlayerState`.
-5. Implement replicated global text chat using server-authoritative state in `GameState`.
-6. Implement two replicated placeholder emotes (`Wave`, `Point`).
-7. Provide Blueprint/UI wiring steps for lobby widget and map setup.
-8. Document local multiplayer test flow.
+## A) Short plan
+1. Keep server authority for gameplay data and RPC entry points (chat/emote).
+2. Keep UI creation and interaction client-only (`PlayerController` + UMG).
+3. Add Unreal session flow on OnlineSubsystem NULL (LAN host/find/join).
+4. Add dedicated-server target/config and clear run commands.
+5. Harden chat on server (sanitize + max length + per-player rate limit).
 
-## Project Structure
+## B) Files/classes created or modified
 
-### Content folders
-Create these in the Unreal Editor Content Browser if not already present:
+### New
+- `Source/HangoutWorldServer.Target.cs`
 
-- `Content/HangoutWorld/Maps/`
-- `Content/HangoutWorld/Blueprints/`
-- `Content/HangoutWorld/UI/`
-- `Content/HangoutWorld/Characters/`
-- `Content/HangoutWorld/Systems/`
-- `Content/HangoutWorld/Data/`
-- `Content/HangoutWorld/Audio/`
+### Modified
+- `Source/HangoutWorld/Public/HW_GameInstance.h`
+- `Source/HangoutWorld/Private/HW_GameInstance.cpp`
+- `Source/HangoutWorld/Public/HW_PlayerController.h`
+- `Source/HangoutWorld/Private/HW_PlayerController.cpp`
+- `Source/HangoutWorld/Public/HW_PlayerState.h`
+- `Source/HangoutWorld/Private/HW_PlayerState.cpp`
+- `Source/HangoutWorld/Public/HW_Character.h`
+- `Source/HangoutWorld/Private/HW_Character.cpp`
+- `Source/HangoutWorld/HangoutWorld.Build.cs`
+- `Config/DefaultEngine.ini`
+- `HangoutWorld.uproject`
 
-### C++ classes
-- `AHW_GameMode`: base game mode for lobby gameplay.
-- `AHW_GameState`: replicated global chat buffer.
-- `AHW_PlayerState`: replicated display name.
-- `AHW_PlayerController`: chat send/focus/emote trigger + local UI spawn.
-- `AHW_Character`: third-person pawn with replicated emote playback and overhead name text.
-- `UHW_GameInstance`: local player name storage + host/join travel helpers.
+## C) C++ code changes
+See code files in `Source/` listed above. Key behavior updates:
+- `UHW_GameInstance` now manages LAN sessions (Host/Find/Join) through Unreal's session interface and exposes BP delegates for UI.
+- `AHW_PlayerController` keeps chat server-authoritative and sanitizes messages both client-side and server-side.
+- `AHW_PlayerState` tracks recent chat send times for basic server-side rate limiting.
+- `AHW_Character` safely binds/unbinds `PlayerState` delegates to avoid duplicate bindings and join-in-progress edge issues.
+- `HangoutWorldServer.Target.cs` enables server builds.
 
-## Unreal Editor Setup Steps (Blueprint + Map)
+## D) UMG Blueprint steps for session browser UI
 
-1. **Create project**
-   - UE5 -> Games -> Third Person -> C++ -> Project name `HangoutWorld`.
-   - Copy this repo's `Source/` and `Config/` over that project (or create classes from editor and paste code).
+Create a new widget `WBP_HW_SessionBrowser` (or extend your existing lobby widget):
 
-2. **Create lobby map**
-   - Create map: `Content/HangoutWorld/Maps/HangoutLobby.umap`.
-   - Add floor, light, PlayerStart(s), and nav if needed.
+1. **Layout**
+   - VerticalBox root:
+     - HorizontalBox (top row):
+       - Button `HostSessionButton`
+       - Button `RefreshSessionsButton`
+     - ScrollBox or ListView `SessionList`
+     - TextBlock `SessionStatusText`
+   - Keep existing chat controls/buttons in same lobby widget.
 
-3. **Create character BP** (`BP_HW_Character`)
-   - Parent: `AHW_Character`.
-   - Set mesh/anim blueprint from Third Person template mannequin.
-   - (Optional) Assign placeholder montages to `WaveMontage` and `PointMontage`.
+2. **Widget variables**
+   - `CachedSessionResults` (Array of `FHWSessionSearchResult`)
+   - `OwningGI` (`UHW_GameInstance` reference)
 
-4. **Create game mode BP** (`BP_HW_GameMode`)
-   - Parent: `AHW_GameMode`.
-   - Set `Default Pawn Class = BP_HW_Character`.
+3. **On Construct**
+   - `Get Game Instance` -> cast to `HW_GameInstance` -> set `OwningGI`.
+   - Bind to:
+     - `OwningGI.OnSessionSearchCompleted`
+     - `OwningGI.OnHostCompleted`
+     - `OwningGI.OnJoinCompleted`
 
-5. **Create lobby widget** (`WBP_HangoutLobby`)
-   - Layout:
-     - Vertical Box with:
-       - ScrollBox (`ChatScroll`)
-       - EditableTextBox (`ChatInput`)
-       - Horizontal row of buttons: Host, Join, Wave, Point.
-       - EditableTextBox for Join IP (`JoinAddressInput`).
-   - Add a lightweight row widget (`WBP_ChatLine`) with one TextBlock (`ChatLineText`).
+4. **Host flow**
+   - `HostSessionButton.OnClicked`:
+     - Set status text to “Hosting session…”
+     - Call `OwningGI.HostLobby(8, "/Game/HangoutWorld/Maps/HangoutLobby")`
 
-6. **Widget logic**
-   - On Construct:
-     - Get Owning Player -> cast `AHW_PlayerController`.
-     - Get GameState -> cast `AHW_GameState`.
-     - Bind to `OnChatMessagesUpdated` delegate.
-   - On `ChatInput.OnTextCommitted`:
-     - If commit type is Enter: call `SendChatMessage` on player controller.
-     - Clear input.
-   - On Escape key:
-     - Call `SetChatFocus(false)`.
-   - Chat refresh function:
-     - Clear `ChatScroll` children.
-     - For each `FHWChatMessage`, spawn `WBP_ChatLine`, set text as `[Timestamp] Sender: Message`, add to scroll.
+5. **Find flow**
+   - `RefreshSessionsButton.OnClicked`:
+     - Set status text to “Searching LAN sessions…”
+     - Call `OwningGI.FindLobbySessions(20)`
+   - On `OnSessionSearchCompleted`:
+     - Save array to `CachedSessionResults`
+     - Clear `SessionList`
+     - For each result, spawn row widget `WBP_HW_SessionRow` with:
+       - HostName
+       - `CurrentPlayers/MaxPlayers`
+       - Join button that stores its index
 
-7. **Buttons**
-   - Host button -> Get GameInstance (`UHW_GameInstance`) -> `HostLobby`.
-   - Join button -> `JoinLobby(JoinAddressInput.Text)`.
-   - Wave button -> `TriggerEmote(EHWEmoteType::Wave)`.
-   - Point button -> `TriggerEmote(EHWEmoteType::Point)`.
+6. **Join flow**
+   - In row widget `JoinButton.OnClicked`:
+     - Call parent widget event `RequestJoinSession(Index)`
+   - In parent:
+     - Set status text “Joining session…”
+     - `OwningGI.JoinLobbySession(Index)`
 
-8. **Controller widget class**
-   - In `AHW_PlayerController` defaults (or BP subclass), set `LobbyWidgetClass = WBP_HangoutLobby`.
+7. **Result handling**
+   - `OnHostCompleted(bool)`:
+     - True: status “Session hosted. Traveling…”
+     - False: status “Failed to host session.”
+   - `OnJoinCompleted(bool)`:
+     - True: status “Join success. Traveling…”
+     - False: status “Failed to join session.”
 
-9. **Map world settings**
-   - Set GameMode override to `BP_HW_GameMode`.
+8. **Client-only UI rule**
+   - Keep all widget spawning and visual updates in PlayerController/UI only.
+   - Do not put widget logic in `GameMode` or dedicated-server paths.
 
-## Local Multiplayer Test Steps
+## E) Run / test instructions
 
-1. In editor, set **Play Number of Players = 2**.
-2. In Advanced Play settings, set Net Mode to **Play as Listen Server**.
-3. Click Play:
-   - Window 1 acts as host/server.
-   - Window 2 acts as client.
-4. Verify:
-   - Movement replicates naturally from `ACharacter` networking.
-   - Overhead names visible/updated for both players.
-   - Chat message from either client appears for both.
-   - Emote buttons trigger replicated placeholder actions on both clients.
+## Listen server (Editor)
+1. Open project in UE5.
+2. Ensure map is `HangoutLobby` and game mode uses `HW_GameMode` (or BP subclass).
+3. PIE settings:
+   - Number of Players: `2`
+   - Net Mode: `Play As Listen Server`
+4. In host window:
+   - Open session browser and click **Host Session**.
+5. In client window:
+   - Click **Find Sessions** then **Join** on host entry.
+6. Validate:
+   - Display names replicate
+   - Chat replicates and is server-filtered
+   - Emotes replicate
 
-For separate processes/package test:
-- Run host build and execute `open /Game/HangoutWorld/Maps/HangoutLobby?listen`.
-- Run client build and execute `open 127.0.0.1`.
+## Dedicated server packaging readiness
 
-## Phase 2 TODO (Customizable Rooms + Persistence)
-- Add room metadata data model (`RoomId`, title, theme, owner, privacy).
-- Introduce backend service for account auth and room persistence.
-- Replace direct IP join with room directory + matchmaking/session browser.
-- Save player profile customization (name, avatar cosmetics, emote loadout).
-- Persist chat history per room (bounded retention + moderation flags).
+### Build target
+- Server target file exists: `Source/HangoutWorldServer.Target.cs`
 
-## Phase 3 TODO (Activities)
-- Activity framework with replicated state machines (e.g., mini-games, whiteboard).
-- Activity join/leave + spectator flows.
-- Score/progress replication with late join synchronization.
-- Activity plugin interface so features can be toggled per room.
+### Required config
+- `OnlineSubsystem NULL` is enabled in `DefaultEngine.ini`.
+- `OnlineSubsystemNull` plugin is enabled in `.uproject`.
 
-## Phase 4 TODO (Screen Share / Presenting)
-- Integrate voice chat provider (OSS voice, Vivox, or platform-native).
-- Add presenter role + permission system.
-- Add WebRTC/screen-share pipeline service (SFU architecture).
-- Add QoS/adaptive bitrate and abuse safety controls.
+### Typical build commands (example)
+From your Unreal Engine source/binary toolchain environment:
+- `UnrealBuildTool HangoutWorldServer Win64 Development -Project="<path>/HangoutWorld.uproject"`
+- Package client normally via Editor/AutomationTool.
 
-## Notes
-- This starter keeps networking server-authoritative where relevant and avoids dedicated-server-only assumptions.
-- Code is intentionally minimal and readable for iteration.
+### Local run examples (once packaged)
+- Dedicated server:
+  - `HangoutWorldServer.exe /Game/HangoutWorld/Maps/HangoutLobby -log -port=7777`
+- Client 1:
+  - `HangoutWorld.exe -log -ResX=1280 -ResY=720`
+- Client 2:
+  - `HangoutWorld.exe -log -ResX=1280 -ResY=720 -WinX=1400`
+
+For direct dedicated connect testing:
+- In client console: `open 127.0.0.1:7777`
+
+## Hardening notes
+- Server chat validation:
+  - Control chars stripped (newline/tab converted to spaces).
+  - Final message trimmed and clamped to 256 chars.
+- Server chat rate limit:
+  - Default 5 messages / 5 seconds / player.
+- Join-in-progress safety:
+  - Character now unbinds/rebinds display-name delegates cleanly on player-state changes.

@@ -7,6 +7,7 @@
 
 class UTextRenderComponent;
 class UAnimMontage;
+class AHW_PlayerState;
 
 UCLASS()
 class HANGOUTWORLD_API AHW_Character : public ACharacter
@@ -28,6 +29,7 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void OnRep_PlayerState() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hangout|UI")
     TObjectPtr<UTextRenderComponent> NameText;
@@ -41,4 +43,9 @@ protected:
 private:
     UFUNCTION()
     void RefreshNameplate();
+
+    void BindPlayerStateEvents();
+    void UnbindPlayerStateEvents();
+
+    TWeakObjectPtr<AHW_PlayerState> BoundPlayerState;
 };

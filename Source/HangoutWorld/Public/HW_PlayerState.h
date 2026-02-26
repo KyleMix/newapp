@@ -20,12 +20,18 @@ public:
     UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Hangout|Player")
     void ServerSetDisplayName(const FString& NewName);
 
+    UFUNCTION(BlueprintCallable, Category = "Hangout|Chat")
+    bool CanSendChatMessage(float WindowSeconds = 5.f, int32 MaxMessagesInWindow = 5);
+
     UPROPERTY(BlueprintAssignable, Category = "Hangout|Player")
     FOnDisplayNameChanged OnDisplayNameChanged;
 
 protected:
     UPROPERTY(ReplicatedUsing = OnRep_DisplayName, BlueprintReadOnly, Category = "Hangout|Player")
     FString DisplayName;
+
+    UPROPERTY()
+    TArray<float> RecentChatServerTimes;
 
     UFUNCTION()
     void OnRep_DisplayName();
