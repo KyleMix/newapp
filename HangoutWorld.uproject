@@ -1,0 +1,14 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.0",
+  "Category": "Games",
+  "Description": "Starter prototype for an open-world hangout MMO-style app",
+  "Modules": [
+    {
+      "Name": "HangoutWorld",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ],
+  "Plugins": []
+}
