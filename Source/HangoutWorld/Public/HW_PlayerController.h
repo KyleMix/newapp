@@ -84,6 +84,13 @@ public:
     UFUNCTION(Server, Reliable)
     void ServerDeleteFurnitureItem(const FGuid& ItemId);
 
+    UFUNCTION(BlueprintCallable, Category = "Hangout|Rooms")
+    void SaveRoomLayout();
+
+    UFUNCTION(Server, Reliable)
+    void ServerSaveRoomLayout();
+
+
 protected:
     UPROPERTY(EditDefaultsOnly, Category = "Hangout|UI")
     TSubclassOf<UUserWidget> LobbyWidgetClass;

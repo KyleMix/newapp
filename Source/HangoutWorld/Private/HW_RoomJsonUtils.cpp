@@ -99,29 +99,45 @@ bool FHW_RoomJsonUtils::LoadLayout(const FString& OwnerUniqueId, TArray<FHWPlace
             continue;
         }
 
-        FHWPlacedFurnitureRecord& Record = OutRecords.AddDefaulted_GetRef();
-        FGuid::Parse(ItemObject->GetStringField(TEXT("itemId")), Record.ItemId);
-        Record.CatalogId = FName(ItemObject->GetStringField(TEXT("catalogId")));
+        FString ItemIdText;
+        FString CatalogIdText;
+        if (!ItemObject->TryGetStringField(TEXT("itemId"), ItemIdText) || !ItemObject->TryGetStringField(TEXT("catalogId"), CatalogIdText))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Room layout item skipped due to missing itemId/catalogId for owner '%s'"), *OwnerUniqueId);
+            continue;
+        }
+
+        FHWPlacedFurnitureRecord Record;
+        if (!FGuid::Parse(ItemIdText, Record.ItemId))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Room layout item skipped due to invalid GUID '%s' for owner '%s'"), *ItemIdText, *OwnerUniqueId);
+            continue;
+        }
+
+        Record.CatalogId = FName(CatalogIdText);
 
         const TSharedPtr<FJsonObject>* TransformObject = nullptr;
         if (ItemObject->TryGetObjectField(TEXT("transform"), TransformObject) && TransformObject)
         {
-            FVector Location;
-            FRotator Rotation;
+            FVector Location(0.f);
+            FRotator Rotation(0.f);
             FVector Scale(1.f);
 
-            Location.X = (*TransformObject)->GetNumberField(TEXT("lx"));
-            Location.Y = (*TransformObject)->GetNumberField(TEXT("ly"));
-            Location.Z = (*TransformObject)->GetNumberField(TEXT("lz"));
-            Rotation.Roll = (*TransformObject)->GetNumberField(TEXT("rx"));
-            Rotation.Pitch = (*TransformObject)->GetNumberField(TEXT("ry"));
-            Rotation.Yaw = (*TransformObject)->GetNumberField(TEXT("rz"));
-            Scale.X = (*TransformObject)->GetNumberField(TEXT("sx"));
-            Scale.Y = (*TransformObject)->GetNumberField(TEXT("sy"));
-            Scale.Z = (*TransformObject)->GetNumberField(TEXT("sz"));
+            double Number = 0.0;
+            if ((*TransformObject)->TryGetNumberField(TEXT("lx"), Number)) { Location.X = static_cast<float>(Number); }
+            if ((*TransformObject)->TryGetNumberField(TEXT("ly"), Number)) { Location.Y = static_cast<float>(Number); }
+            if ((*TransformObject)->TryGetNumberField(TEXT("lz"), Number)) { Location.Z = static_cast<float>(Number); }
+            if ((*TransformObject)->TryGetNumberField(TEXT("rx"), Number)) { Rotation.Roll = static_cast<float>(Number); }
+            if ((*TransformObject)->TryGetNumberField(TEXT("ry"), Number)) { Rotation.Pitch = static_cast<float>(Number); }
+            if ((*TransformObject)->TryGetNumberField(TEXT("rz"), Number)) { Rotation.Yaw = static_cast<float>(Number); }
+            if ((*TransformObject)->TryGetNumberField(TEXT("sx"), Number)) { Scale.X = static_cast<float>(Number); }
+            if ((*TransformObject)->TryGetNumberField(TEXT("sy"), Number)) { Scale.Y = static_cast<float>(Number); }
+            if ((*TransformObject)->TryGetNumberField(TEXT("sz"), Number)) { Scale.Z = static_cast<float>(Number); }
 
             Record.Transform = FTransform(Rotation, Location, Scale);
         }
+
+        OutRecords.Add(MoveTemp(Record));
     }
 
     return true;

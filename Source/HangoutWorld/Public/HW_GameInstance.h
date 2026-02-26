@@ -73,7 +73,7 @@ public:
 
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hangout|Rooms")
-    FString RoomMapPath = TEXT("/Game/HangoutWorld/Maps/HangoutRoom");
+    FString RoomMapPath = TEXT("/Game/HangoutWorld/Maps/PlayerRoom");
 
     UFUNCTION(BlueprintCallable, Category = "Hangout|Rooms")
     void HostMyRoom(int32 MaxPublicConnections = 8);

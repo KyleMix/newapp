@@ -273,6 +273,27 @@ void AHW_PlayerController::ServerDeleteFurnitureItem_Implementation(const FGuid&
     }
 }
 
+void AHW_PlayerController::SaveRoomLayout()
+{
+    if (!bRoomEditModeEnabled)
+    {
+        return;
+    }
+
+    ServerSaveRoomLayout();
+}
+
+void AHW_PlayerController::ServerSaveRoomLayout_Implementation()
+{
+    if (AHW_RoomManager* RoomManager = FindRoomManager())
+    {
+        if (RoomManager->CanControllerEdit(this))
+        {
+            RoomManager->SaveLayoutToDisk();
+        }
+    }
+}
+
 AHW_RoomManager* AHW_PlayerController::FindRoomManager() const
 {
     if (!GetWorld())

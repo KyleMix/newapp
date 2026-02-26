@@ -9,6 +9,8 @@ namespace
     const FName HWSessionName = NAME_GameSession;
 }
 
+DEFINE_LOG_CATEGORY_STATIC(LogHWSession, Log, All);
+
 void UHW_GameInstance::Init()
 {
     Super::Init();
@@ -66,12 +68,20 @@ IOnlineSessionPtr UHW_GameInstance::GetSessionInterface() const
 
 void UHW_GameInstance::HostLobby(int32 MaxPublicConnections, const FString& MapPath)
 {
+    if (MapPath.IsEmpty())
+    {
+        UE_LOG(LogHWSession, Warning, TEXT("HostLobby rejected: map path is empty."));
+        OnHostCompleted.Broadcast(false);
+        return;
+    }
+
     PendingTravelMapPath = MapPath;
     PendingMaxPublicConnections = FMath::Max(2, MaxPublicConnections);
 
     IOnlineSessionPtr SessionInterface = GetSessionInterface();
     if (!SessionInterface.IsValid())
     {
+        UE_LOG(LogHWSession, Warning, TEXT("HostLobby failed: online session interface is invalid."));
         OnHostCompleted.Broadcast(false);
         return;
     }
@@ -137,6 +147,7 @@ void UHW_GameInstance::FindLobbySessions(int32 MaxResults)
     IOnlineSessionPtr SessionInterface = GetSessionInterface();
     if (!SessionInterface.IsValid())
     {
+        UE_LOG(LogHWSession, Warning, TEXT("FindLobbySessions failed: online session interface is invalid."));
         OnSessionSearchCompleted.Broadcast(TArray<FHWSessionSearchResult>());
         return;
     }
@@ -171,6 +182,7 @@ void UHW_GameInstance::JoinLobbySession(int32 SessionIndex)
     IOnlineSessionPtr SessionInterface = GetSessionInterface();
     if (!SessionInterface.IsValid() || !SessionSearch.IsValid() || !SessionSearch->SearchResults.IsValidIndex(SessionIndex))
     {
+        UE_LOG(LogHWSession, Warning, TEXT("JoinLobbySession failed: invalid session interface/search/index. Index=%d"), SessionIndex);
         OnJoinCompleted.Broadcast(false);
         return;
     }
@@ -210,6 +222,7 @@ void UHW_GameInstance::HostMyRoom(int32 MaxPublicConnections)
 
     OwnerId = OwnerId.Replace(TEXT(" "), TEXT("_"));
     const FString RoomTravel = FString::Printf(TEXT("%s?OwnerId=%s"), *RoomMapPath, *OwnerId);
+    UE_LOG(LogHWSession, Log, TEXT("Hosting room for owner '%s' via '%s'"), *OwnerId, *RoomTravel);
     HostLobby(MaxPublicConnections, RoomTravel);
 }
 
@@ -229,13 +242,23 @@ void UHW_GameInstance::HandleCreateSessionComplete(FName SessionName, bool bWasS
 
     if (!bWasSuccessful || SessionName != HWSessionName)
     {
+        UE_LOG(LogHWSession, Warning, TEXT("CreateSession failed for '%s'"), *SessionName.ToString());
+        OnHostCompleted.Broadcast(false);
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        UE_LOG(LogHWSession, Error, TEXT("CreateSession succeeded but world is null; cannot travel."));
         OnHostCompleted.Broadcast(false);
         return;
     }
 
     const FString TravelURL = FString::Printf(TEXT("%s?listen"), *PendingTravelMapPath);
-    if (!GetWorld()->ServerTravel(TravelURL))
+    if (!World->ServerTravel(TravelURL))
     {
+        UE_LOG(LogHWSession, Warning, TEXT("ServerTravel failed for URL '%s'"), *TravelURL);
         OnHostCompleted.Broadcast(false);
         return;
     }
@@ -254,6 +277,7 @@ void UHW_GameInstance::HandleDestroySessionComplete(FName SessionName, bool bWas
 
     if (!bWasSuccessful || SessionName != HWSessionName)
     {
+        UE_LOG(LogHWSession, Warning, TEXT("DestroySession failed for '%s'"), *SessionName.ToString());
         OnHostCompleted.Broadcast(false);
         return;
     }
@@ -299,6 +323,7 @@ void UHW_GameInstance::HandleJoinSessionComplete(FName SessionName, EOnJoinSessi
 
     if (!SessionInterface.IsValid() || SessionName != HWSessionName || Result != EOnJoinSessionCompleteResult::Success)
     {
+        UE_LOG(LogHWSession, Warning, TEXT("JoinSession failed for '%s' with result %d"), *SessionName.ToString(), static_cast<int32>(Result));
         OnJoinCompleted.Broadcast(false);
         return;
     }
