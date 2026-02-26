@@ -9,6 +9,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogHWRoom, Log, All);
+
 AHW_RoomManager::AHW_RoomManager()
 {
     bReplicates = true;
@@ -55,13 +57,20 @@ bool AHW_RoomManager::CanControllerEdit(const AHW_PlayerController* Controller) 
         return false;
     }
 
-    return PlayerState->GetUniqueId().ToString() == RoomOwnerUniqueId;
+    const FString NetId = PlayerState->GetUniqueId().ToString();
+    if (!NetId.IsEmpty() && NetId != TEXT("INVALID"))
+    {
+        return NetId == RoomOwnerUniqueId;
+    }
+
+    return PlayerState->GetPlayerName() == RoomOwnerUniqueId;
 }
 
 bool AHW_RoomManager::AddFurnitureFromRequest(AHW_PlayerController* RequestingController, FName CatalogId, const FTransform& Transform)
 {
     if (!HasAuthority() || !CanControllerEdit(RequestingController) || !FurnitureCatalog)
     {
+        UE_LOG(LogHWRoom, Warning, TEXT("AddFurniture denied: authority=%d canEdit=%d catalogValid=%d"), HasAuthority() ? 1 : 0, CanControllerEdit(RequestingController) ? 1 : 0, FurnitureCatalog ? 1 : 0);
         return false;
     }
 
@@ -87,6 +96,7 @@ bool AHW_RoomManager::RemoveFurnitureFromRequest(AHW_PlayerController* Requestin
 {
     if (!HasAuthority() || !CanControllerEdit(RequestingController))
     {
+        UE_LOG(LogHWRoom, Warning, TEXT("RemoveFurniture denied: authority=%d canEdit=%d"), HasAuthority() ? 1 : 0, CanControllerEdit(RequestingController) ? 1 : 0);
         return false;
     }
 
@@ -116,7 +126,18 @@ bool AHW_RoomManager::RemoveFurnitureFromRequest(AHW_PlayerController* Requestin
 
 bool AHW_RoomManager::SaveLayoutToDisk()
 {
-    return FHW_RoomJsonUtils::SaveLayout(RoomOwnerUniqueId, RoomLayout);
+    if (RoomOwnerUniqueId.IsEmpty())
+    {
+        UE_LOG(LogHWRoom, Warning, TEXT("SaveLayoutToDisk skipped: empty RoomOwnerUniqueId."));
+        return false;
+    }
+
+    const bool bSaved = FHW_RoomJsonUtils::SaveLayout(RoomOwnerUniqueId, RoomLayout);
+    if (!bSaved)
+    {
+        UE_LOG(LogHWRoom, Warning, TEXT("SaveLayoutToDisk failed for owner '%s'"), *RoomOwnerUniqueId);
+    }
+    return bSaved;
 }
 
 void AHW_RoomManager::LoadLayoutFromDisk()
@@ -130,11 +151,13 @@ void AHW_RoomManager::LoadLayoutFromDisk()
     const bool bLoaded = FHW_RoomJsonUtils::LoadLayout(RoomOwnerUniqueId, LoadedLayout);
     if (!bLoaded)
     {
+        UE_LOG(LogHWRoom, Warning, TEXT("LoadLayoutFromDisk failed for owner '%s'. Starting empty layout."), *RoomOwnerUniqueId);
         RoomLayout.Reset();
     }
     else
     {
         RoomLayout = LoadedLayout;
+        UE_LOG(LogHWRoom, Log, TEXT("Loaded %d furniture records for owner '%s'"), RoomLayout.Num(), *RoomOwnerUniqueId);
     }
 
     ReconcileSpawnedActorsWithLayout();
