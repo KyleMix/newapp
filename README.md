@@ -2,11 +2,7 @@
 
 ## Prerequisites
 - **Unreal Engine**: 5.7.3 (validated target).
-- **Visual Studio 2022** with:
-  - Desktop development with C++
-  - Game development with C++
-  - Windows 10/11 SDK
-  - MSVC v143 toolset
+- **Unreal Engine C++ toolchain support** installed via Epic Launcher for your platform.
 - **Starter Content** (recommended) for catalog meshes. If unavailable, use Engine basic shapes.
 
 ## Repo Structure
@@ -27,12 +23,10 @@
 > Project defaults are configured to open **MainMenu** first.
 
 ## Build and Run (exact steps)
-1. Right-click `HangoutWorld.uproject` → **Generate Visual Studio project files**.
-2. Open `HangoutWorld.sln` in VS2022.
-3. Build target:
-   - Development Editor
-   - Win64
-4. Launch editor from VS or by opening `HangoutWorld.uproject`.
+1. Open `HangoutWorld.uproject` directly in **Unreal Engine**.
+2. If prompted, allow Unreal to generate project files and compile missing C++ modules.
+3. In Unreal Editor, use **Platforms > Windows > Build Target: Development Editor** (or your platform equivalent).
+4. Use **Compile** in the Unreal Editor toolbar to ensure the project builds successfully.
 5. Confirm startup map is `MainMenu`.
 
 ## Multiplayer PIE Test (2 players)
