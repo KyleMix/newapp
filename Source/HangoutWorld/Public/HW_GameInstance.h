@@ -71,6 +71,16 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Hangout|Voice")
     FOnVoiceChatEnabledChanged OnVoiceChatEnabledChanged;
 
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hangout|Rooms")
+    FString RoomMapPath = TEXT("/Game/HangoutWorld/Maps/HangoutRoom");
+
+    UFUNCTION(BlueprintCallable, Category = "Hangout|Rooms")
+    void HostMyRoom(int32 MaxPublicConnections = 8);
+
+    UFUNCTION(BlueprintCallable, Category = "Hangout|Rooms")
+    void VisitFriendRoom(int32 SessionIndex);
+
 protected:
     FString PendingTravelMapPath;
     int32 PendingMaxPublicConnections = 8;

@@ -1,147 +1,195 @@
-# HangoutWorld (UE5 C++ Networking Prototype)
+# HangoutWorld – Phase 2: Customizable Rooms
 
-This refactor keeps listen-server play in editor working while aligning architecture with dedicated-server expectations.
+## A) Plan + Architecture choice
 
-## A) Short plan
-1. Keep server authority for gameplay data and RPC entry points (chat/emote).
-2. Keep UI creation and interaction client-only (`PlayerController` + UMG).
-3. Add Unreal session flow on OnlineSubsystem NULL (LAN host/find/join).
-4. Add dedicated-server target/config and clear run commands.
-5. Harden chat on server (sanitize + max length + per-player rate limit).
+### Chosen approach: **Option A (separate Room map travel)**
+I implemented room housing with standard map travel/session flow instead of per-owner streamed sublevels.
 
-## B) Files/classes created or modified
+**Why this is simplest and most stable right now:**
+1. Reuses your already-working host/join session pipeline.
+2. Keeps one authoritative room state on one server world.
+3. Avoids complex per-player streaming ownership/routing logic for this phase.
+4. Dedicated-server compatible (room map can be loaded by listen or dedicated host).
 
-### New
-- `Source/HangoutWorldServer.Target.cs`
+**Flow**
+- Owner presses **Go To My Room** → `HostMyRoom()` hosts a session and travels to room map with `?OwnerId=<UniqueId>` URL option.
+- Visitor presses **Visit Friend Room** from session list → `VisitFriendRoom()` (join by session index).
+- `AHW_RoomManager` on server reads owner layout JSON, spawns replicated furniture actors, and maintains authoritative layout mutations.
 
-### Modified
+---
+
+## B) New/modified classes and assets
+
+## New C++ classes
+- `Source/HangoutWorld/Public/HW_FurnitureCatalogDataAsset.h`
+- `Source/HangoutWorld/Private/HW_FurnitureCatalogDataAsset.cpp`
+- `Source/HangoutWorld/Public/HW_PlaceableFurnitureActor.h`
+- `Source/HangoutWorld/Private/HW_PlaceableFurnitureActor.cpp`
+- `Source/HangoutWorld/Public/HW_RoomJsonUtils.h`
+- `Source/HangoutWorld/Private/HW_RoomJsonUtils.cpp`
+- `Source/HangoutWorld/Public/HW_RoomManager.h`
+- `Source/HangoutWorld/Private/HW_RoomManager.cpp`
+
+## Modified C++ classes
+- `Source/HangoutWorld/Public/HW_Types.h`
 - `Source/HangoutWorld/Public/HW_GameInstance.h`
 - `Source/HangoutWorld/Private/HW_GameInstance.cpp`
 - `Source/HangoutWorld/Public/HW_PlayerController.h`
 - `Source/HangoutWorld/Private/HW_PlayerController.cpp`
-- `Source/HangoutWorld/Public/HW_PlayerState.h`
-- `Source/HangoutWorld/Private/HW_PlayerState.cpp`
-- `Source/HangoutWorld/Public/HW_Character.h`
-- `Source/HangoutWorld/Private/HW_Character.cpp`
 - `Source/HangoutWorld/HangoutWorld.Build.cs`
-- `Config/DefaultEngine.ini`
-- `HangoutWorld.uproject`
 
-## C) C++ code changes
-See code files in `Source/` listed above. Key behavior updates:
-- `UHW_GameInstance` now manages LAN sessions (Host/Find/Join) through Unreal's session interface and exposes BP delegates for UI.
-- `AHW_PlayerController` keeps chat server-authoritative and sanitizes messages both client-side and server-side.
-- `AHW_PlayerState` tracks recent chat send times for basic server-side rate limiting.
-- `AHW_Character` safely binds/unbinds `PlayerState` delegates to avoid duplicate bindings and join-in-progress edge issues.
-- `HangoutWorldServer.Target.cs` enables server builds.
+## Unreal assets to create in Editor
+1. **Catalog DataAsset**
+   - Path: `/Game/HangoutWorld/Rooms/Data/DA_HW_FurnitureCatalog`
+   - Class: `UHW_FurnitureCatalogDataAsset`
+   - Add 5–10 entries (example IDs):
+     - `chair_basic`
+     - `couch_small`
+     - `table_round`
+     - `lamp_floor`
+     - `plant_potted`
+     - `poster_modern`
+     - `rug_square`
+2. **Room manager actor BP**
+   - Path: `/Game/HangoutWorld/Rooms/BP_HW_RoomManager`
+   - Parent class: `AHW_RoomManager`
+   - Set `FurnitureCatalog = DA_HW_FurnitureCatalog`
+   - Place one instance in room map.
+3. **Furniture actor BPs** (optional per item)
+   - Parent class: `AHW_PlaceableFurnitureActor`
+   - Set static mesh/materials per furniture item.
 
-## D) UMG Blueprint steps for session browser UI
+---
 
-Create a new widget `WBP_HW_SessionBrowser` (or extend your existing lobby widget):
+## C) C++ implementation details
 
-1. **Layout**
-   - VerticalBox root:
-     - HorizontalBox (top row):
-       - Button `HostSessionButton`
-       - Button `RefreshSessionsButton`
-     - ScrollBox or ListView `SessionList`
-     - TextBlock `SessionStatusText`
-   - Keep existing chat controls/buttons in same lobby widget.
+### 1) Catalog data structures
+- `FHWCatalogItemDefinition` and `FHWPlacedFurnitureRecord` are in `HW_Types.h`.
+- Catalog is stored in `UHW_FurnitureCatalogDataAsset` with item lookup by `CatalogId`.
 
-2. **Widget variables**
-   - `CachedSessionResults` (Array of `FHWSessionSearchResult`)
-   - `OwningGI` (`UHW_GameInstance` reference)
+### 2) Placeable replicated actor
+- `AHW_PlaceableFurnitureActor` replicates:
+  - `PlacedItemId`
+  - `CatalogItemId`
+  - `RoomOwnerUniqueId`
+- Actor replication + server spawn ensures join-in-progress clients receive existing placed furniture.
 
-3. **On Construct**
-   - `Get Game Instance` -> cast to `HW_GameInstance` -> set `OwningGI`.
-   - Bind to:
-     - `OwningGI.OnSessionSearchCompleted`
-     - `OwningGI.OnHostCompleted`
-     - `OwningGI.OnJoinCompleted`
+### 3) Room manager (server authority + replication)
+- `AHW_RoomManager` owns room layout authoritative state:
+  - Replicated array: `TArray<FHWPlacedFurnitureRecord> RoomLayout` (`OnRep_Layout`)
+  - Owner identity: `RoomOwnerUniqueId`
+  - Runtime map to avoid duplicates: `SpawnedActors`
+- Core behavior:
+  - On server `BeginPlay()` reads `OwnerId` from URL and loads JSON.
+  - `AddFurnitureFromRequest(...)` validates owner permissions, validates catalog ID, assigns `FGuid`, updates layout, spawns replicated actor, saves JSON.
+  - `RemoveFurnitureFromRequest(...)` validates owner permissions, removes layout/actor, saves JSON.
+  - `OnRep_Layout()` + `ReconcileSpawnedActorsWithLayout()` handles late join and avoids duplicates.
 
-4. **Host flow**
-   - `HostSessionButton.OnClicked`:
-     - Set status text to “Hosting session…”
-     - Call `OwningGI.HostLobby(8, "/Game/HangoutWorld/Maps/HangoutLobby")`
+### 4) JSON save/load utilities
+- `FHW_RoomJsonUtils` writes/reads:
+  - `Saved/HangoutWorld/Rooms/<OwnerUniqueId>.json`
+- Includes:
+  - `itemId`
+  - `catalogId`
+  - full transform (`location`, `rotation`, `scale` components)
+- Error behavior:
+  - Missing file: valid empty layout.
+  - Invalid JSON: warning log + empty layout fallback.
+  - Unknown catalog ID: skipped with warning.
 
-5. **Find flow**
-   - `RefreshSessionsButton.OnClicked`:
-     - Set status text to “Searching LAN sessions…”
-     - Call `OwningGI.FindLobbySessions(20)`
-   - On `OnSessionSearchCompleted`:
-     - Save array to `CachedSessionResults`
-     - Clear `SessionList`
-     - For each result, spawn row widget `WBP_HW_SessionRow` with:
-       - HostName
-       - `CurrentPlayers/MaxPlayers`
-       - Join button that stores its index
+### 5) Player-controller placement API (owner edit mode)
+`AHW_PlayerController` now exposes Blueprint-callable room editing hooks:
+- `SetRoomEditModeEnabled(bool)` (owner check via room manager)
+- `SetRoomGridSnapEnabled(bool)`
+- `SetSelectedFurnitureCatalogId(FName)`
+- `ConfirmFurniturePlacement(FTransform)` → server RPC `ServerConfirmFurniturePlacement(...)`
+- `DeleteFurnitureItem(AHW_PlaceableFurnitureActor*)` → server RPC `ServerDeleteFurnitureItem(...)`
 
-6. **Join flow**
-   - In row widget `JoinButton.OnClicked`:
-     - Call parent widget event `RequestJoinSession(Index)`
-   - In parent:
-     - Set status text “Joining session…”
-     - `OwningGI.JoinLobbySession(Index)`
+All placement/deletion is validated and executed server-side only.
 
-7. **Result handling**
-   - `OnHostCompleted(bool)`:
-     - True: status “Session hosted. Traveling…”
-     - False: status “Failed to host session.”
-   - `OnJoinCompleted(bool)`:
-     - True: status “Join success. Traveling…”
-     - False: status “Failed to join session.”
+### 6) Room travel UI hooks
+`UHW_GameInstance` now includes:
+- `HostMyRoom(int32 MaxPublicConnections)`
+- `VisitFriendRoom(int32 SessionIndex)`
+- `RoomMapPath` config value (`/Game/HangoutWorld/Maps/HangoutRoom` by default)
 
-8. **Client-only UI rule**
-   - Keep all widget spawning and visual updates in PlayerController/UI only.
-   - Do not put widget logic in `GameMode` or dedicated-server paths.
+---
 
-## E) Run / test instructions
+## D) UMG Blueprint steps
 
-## Listen server (Editor)
-1. Open project in UE5.
-2. Ensure map is `HangoutLobby` and game mode uses `HW_GameMode` (or BP subclass).
-3. PIE settings:
-   - Number of Players: `2`
-   - Net Mode: `Play As Listen Server`
-4. In host window:
-   - Open session browser and click **Host Session**.
-5. In client window:
-   - Click **Find Sessions** then **Join** on host entry.
-6. Validate:
-   - Display names replicate
-   - Chat replicates and is server-filtered
-   - Emotes replicate
+Create/extend your lobby widget with:
+- Button: **Go To My Room**
+- Button: **Visit Friend Room** (from selected session row)
 
-## Dedicated server packaging readiness
+### Lobby widget bindings
+1. On construct, cache `HW_GameInstance`.
+2. **Go To My Room** button:
+   - Call `HW_GameInstance.HostMyRoom(8)`
+3. **Visit Friend Room** button/row action:
+   - Call `HW_GameInstance.VisitFriendRoom(SessionIndex)`
 
-### Build target
-- Server target file exists: `Source/HangoutWorldServer.Target.cs`
+### Room HUD widget (`WBP_HW_RoomEditHUD`)
+Add:
+- Toggle button: **Edit Mode**
+- Toggle: **Grid Snap**
+- ListView/VerticalBox for catalog entries
+- Buttons: **Place**, **Cancel**, **Delete Selected**
 
-### Required config
-- `OnlineSubsystem NULL` is enabled in `DefaultEngine.ini`.
-- `OnlineSubsystemNull` plugin is enabled in `.uproject`.
+Binding logic:
+1. `Edit Mode Toggle` → `PlayerController.SetRoomEditModeEnabled`.
+2. `Grid Snap Toggle` → `PlayerController.SetRoomGridSnapEnabled`.
+3. Catalog row click → `PlayerController.SetSelectedFurnitureCatalogId(CatalogId)`.
+4. In edit mode, spawn/update a local ghost preview BP (non-replicated visual only).
+5. Place confirm:
+   - Build transform from preview (apply snap if enabled).
+   - Call `PlayerController.ConfirmFurniturePlacement(Transform)`.
+6. Delete selected:
+   - Raycast/select a furniture actor.
+   - Call `PlayerController.DeleteFurnitureItem(TargetFurnitureActor)`.
 
-### Typical build commands (example)
-From your Unreal Engine source/binary toolchain environment:
-- `UnrealBuildTool HangoutWorldServer Win64 Development -Project="<path>/HangoutWorld.uproject"`
-- Package client normally via Editor/AutomationTool.
+Permission UX:
+- If not owner, hide/disable edit controls, but keep interaction controls (e.g., sit/interact) enabled.
 
-### Local run examples (once packaged)
-- Dedicated server:
-  - `HangoutWorldServer.exe /Game/HangoutWorld/Maps/HangoutLobby -log -port=7777`
-- Client 1:
-  - `HangoutWorld.exe -log -ResX=1280 -ResY=720`
-- Client 2:
-  - `HangoutWorld.exe -log -ResX=1280 -ResY=720 -WinX=1400`
+---
 
-For direct dedicated connect testing:
-- In client console: `open 127.0.0.1:7777`
+## E) Exact local test instructions
 
-## Hardening notes
-- Server chat validation:
-  - Control chars stripped (newline/tab converted to spaces).
-  - Final message trimmed and clamped to 256 chars.
-- Server chat rate limit:
-  - Default 5 messages / 5 seconds / player.
-- Join-in-progress safety:
-  - Character now unbinds/rebinds display-name delegates cleanly on player-state changes.
+## Test 1: Owner save/load persistence
+1. Launch 1 listen server client.
+2. In lobby, click **Go To My Room**.
+3. Enable edit mode.
+4. Place 3 items from catalog.
+5. Exit to lobby/menu, then re-open **Go To My Room**.
+6. Verify all 3 items load in same transforms.
+7. Confirm file exists at:
+   - `Saved/HangoutWorld/Rooms/<OwnerUniqueId>.json`
+
+## Test 2: Visitor replication and permissions
+1. Launch 2 clients (listen host + client).
+2. Host goes to room and places items.
+3. Client uses **Visit Friend Room** (session join).
+4. Verify visitor sees exact placed items.
+5. On visitor, attempt edit mode/place/delete:
+   - Must be blocked (no mutation).
+
+## Test 3: Join-in-progress
+1. Host room with placed items already loaded.
+2. Start a new client after host is already in room.
+3. Join room session.
+4. Verify placed furniture appears automatically without manual refresh.
+
+## Test 4: Robustness checks
+1. Delete owner JSON file and open room:
+   - Room should start empty.
+2. Corrupt JSON content manually and open room:
+   - Warning log expected, room should start empty.
+3. Put unknown `catalogId` in JSON item:
+   - Unknown item skipped, others still load.
+
+---
+
+## TODO (future phases only)
+- Backend persistence service (replace local JSON)
+- Furniture inventory/economy
+- Monetization and entitlement checks
+- Advanced moderation for object interactions
