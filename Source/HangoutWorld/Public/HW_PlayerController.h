@@ -33,4 +33,7 @@ protected:
 
     UPROPERTY()
     TObjectPtr<UUserWidget> LobbyWidget;
+
+private:
+    FString SanitizeChatMessage(const FString& RawMessage) const;
 };

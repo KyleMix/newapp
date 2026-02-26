@@ -1,4 +1,5 @@
 #include "HW_Character.h"
+
 #include "Components/TextRenderComponent.h"
 #include "Engine/Engine.h"
 #include "HW_PlayerState.h"
@@ -18,19 +19,41 @@ AHW_Character::AHW_Character()
 void AHW_Character::BeginPlay()
 {
     Super::BeginPlay();
+    BindPlayerStateEvents();
     RefreshNameplate();
 }
 
 void AHW_Character::OnRep_PlayerState()
 {
     Super::OnRep_PlayerState();
+    BindPlayerStateEvents();
+    RefreshNameplate();
+}
+
+void AHW_Character::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    UnbindPlayerStateEvents();
+    Super::EndPlay(EndPlayReason);
+}
+
+void AHW_Character::BindPlayerStateEvents()
+{
+    UnbindPlayerStateEvents();
 
     if (AHW_PlayerState* HWPS = GetPlayerState<AHW_PlayerState>())
     {
         HWPS->OnDisplayNameChanged.AddDynamic(this, &AHW_Character::RefreshNameplate);
+        BoundPlayerState = HWPS;
     }
+}
 
-    RefreshNameplate();
+void AHW_Character::UnbindPlayerStateEvents()
+{
+    if (BoundPlayerState.IsValid())
+    {
+        BoundPlayerState->OnDisplayNameChanged.RemoveDynamic(this, &AHW_Character::RefreshNameplate);
+        BoundPlayerState = nullptr;
+    }
 }
 
 void AHW_Character::RefreshNameplate()

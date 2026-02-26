@@ -1,6 +1,7 @@
 #include "HW_PlayerController.h"
+
 #include "Blueprint/UserWidget.h"
-#include "GameFramework/Character.h"
+#include "Engine/World.h"
 #include "HW_Character.h"
 #include "HW_GameInstance.h"
 #include "HW_GameState.h"
@@ -10,7 +11,7 @@ void AHW_PlayerController::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (IsLocalController() && LobbyWidgetClass)
+    if (IsLocalController() && !IsRunningDedicatedServer() && LobbyWidgetClass)
     {
         LobbyWidget = CreateWidget(this, LobbyWidgetClass);
         if (LobbyWidget)
@@ -19,30 +20,48 @@ void AHW_PlayerController::BeginPlay()
         }
     }
 
-    if (UHW_GameInstance* GI = GetGameInstance<UHW_GameInstance>())
+    if (IsLocalController())
     {
-        if (AHW_PlayerState* HWPS = GetPlayerState<AHW_PlayerState>())
+        if (UHW_GameInstance* GI = GetGameInstance<UHW_GameInstance>())
         {
-            HWPS->ServerSetDisplayName(GI->LocalPlayerName);
+            if (AHW_PlayerState* HWPS = GetPlayerState<AHW_PlayerState>())
+            {
+                HWPS->ServerSetDisplayName(GI->LocalPlayerName);
+            }
         }
     }
 }
 
 void AHW_PlayerController::SendChatMessage(const FString& Message)
 {
-    if (!Message.TrimStartAndEnd().IsEmpty())
+    const FString Sanitized = SanitizeChatMessage(Message);
+    if (!Sanitized.IsEmpty())
     {
-        ServerSendChatMessage(Message);
+        ServerSendChatMessage(Sanitized);
     }
 }
 
 void AHW_PlayerController::ServerSendChatMessage_Implementation(const FString& Message)
 {
-    if (AHW_GameState* HWS = GetWorld()->GetGameState<AHW_GameState>())
+    AHW_PlayerState* HWPlayerState = GetPlayerState<AHW_PlayerState>();
+    AHW_GameState* HWGameState = GetWorld() ? GetWorld()->GetGameState<AHW_GameState>() : nullptr;
+    if (!HWPlayerState || !HWGameState)
     {
-        const FString Sender = GetPlayerState<AHW_PlayerState>() ? GetPlayerState<AHW_PlayerState>()->GetDisplayName() : TEXT("Player");
-        HWS->AddChatMessage(Sender, Message);
+        return;
     }
+
+    if (!HWPlayerState->CanSendChatMessage(5.f, 5))
+    {
+        return;
+    }
+
+    const FString Sanitized = SanitizeChatMessage(Message);
+    if (Sanitized.IsEmpty())
+    {
+        return;
+    }
+
+    HWGameState->AddChatMessage(HWPlayerState->GetDisplayName(), Sanitized);
 }
 
 void AHW_PlayerController::TriggerEmote(EHWEmoteType Emote)
@@ -67,4 +86,28 @@ void AHW_PlayerController::SetChatFocus(bool bFocused)
         SetInputMode(FInputModeGameOnly());
         bShowMouseCursor = false;
     }
+}
+
+FString AHW_PlayerController::SanitizeChatMessage(const FString& RawMessage) const
+{
+    FString Sanitized;
+    Sanitized.Reserve(RawMessage.Len());
+
+    for (const TCHAR Character : RawMessage)
+    {
+        if (Character == TEXT('\n') || Character == TEXT('\r') || Character == TEXT('\t'))
+        {
+            Sanitized.AppendChar(TEXT(' '));
+            continue;
+        }
+
+        if (!FChar::IsControl(Character))
+        {
+            Sanitized.AppendChar(Character);
+        }
+    }
+
+    Sanitized = Sanitized.TrimStartAndEnd();
+    Sanitized = Sanitized.Left(256);
+    return Sanitized;
 }
