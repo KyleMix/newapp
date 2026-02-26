@@ -18,7 +18,9 @@ public class HangoutWorld : ModuleRules
             "SlateCore",
             "NetCore",
             "OnlineSubsystem",
-            "OnlineSubsystemUtils"
+            "OnlineSubsystemUtils",
+            "Json",
+            "JsonUtilities"
         });
     }
 }

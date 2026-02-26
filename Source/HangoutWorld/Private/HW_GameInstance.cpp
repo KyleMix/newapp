@@ -2,6 +2,7 @@
 
 #include "Interfaces/OnlineSessionInterface.h"
 #include "OnlineSubsystem.h"
+#include "Engine/LocalPlayer.h"
 
 namespace
 {
@@ -193,6 +194,28 @@ void UHW_GameInstance::JoinLobbySession(int32 SessionIndex)
         JoinSessionCompleteHandle.Reset();
         OnJoinCompleted.Broadcast(false);
     }
+}
+
+
+void UHW_GameInstance::HostMyRoom(int32 MaxPublicConnections)
+{
+    FString OwnerId = LocalPlayerName;
+    if (const ULocalPlayer* LocalPlayer = GetFirstGamePlayer())
+    {
+        if (LocalPlayer->GetPreferredUniqueNetId().IsValid())
+        {
+            OwnerId = LocalPlayer->GetPreferredUniqueNetId()->ToString();
+        }
+    }
+
+    OwnerId = OwnerId.Replace(TEXT(" "), TEXT("_"));
+    const FString RoomTravel = FString::Printf(TEXT("%s?OwnerId=%s"), *RoomMapPath, *OwnerId);
+    HostLobby(MaxPublicConnections, RoomTravel);
+}
+
+void UHW_GameInstance::VisitFriendRoom(int32 SessionIndex)
+{
+    JoinLobbySession(SessionIndex);
 }
 
 void UHW_GameInstance::HandleCreateSessionComplete(FName SessionName, bool bWasSuccessful)

@@ -9,6 +9,9 @@
 #include "HW_ModerationServiceSubsystem.h"
 #include "HW_PlayerState.h"
 #include "HW_VoiceServiceSubsystem.h"
+#include "HW_PlaceableFurnitureActor.h"
+#include "HW_RoomManager.h"
+#include "EngineUtils.h"
 
 void AHW_PlayerController::BeginPlay()
 {
@@ -220,4 +223,67 @@ FString AHW_PlayerController::ResolvePlayerId(const AHW_PlayerState* TargetPlaye
     }
 
     return TargetPlayer->GetUniqueId().ToString();
+}
+
+
+void AHW_PlayerController::SetRoomEditModeEnabled(bool bEnabled)
+{
+    AHW_RoomManager* RoomManager = FindRoomManager();
+    bRoomEditModeEnabled = RoomManager && RoomManager->CanControllerEdit(this) ? bEnabled : false;
+}
+
+void AHW_PlayerController::SetRoomGridSnapEnabled(bool bEnabled)
+{
+    bRoomGridSnapEnabled = bEnabled;
+}
+
+void AHW_PlayerController::ConfirmFurniturePlacement(const FTransform& DesiredTransform)
+{
+    if (!bRoomEditModeEnabled || SelectedFurnitureCatalogId.IsNone())
+    {
+        return;
+    }
+
+    ServerConfirmFurniturePlacement(SelectedFurnitureCatalogId, DesiredTransform);
+}
+
+void AHW_PlayerController::ServerConfirmFurniturePlacement_Implementation(FName CatalogId, FTransform DesiredTransform)
+{
+    if (AHW_RoomManager* RoomManager = FindRoomManager())
+    {
+        RoomManager->AddFurnitureFromRequest(this, CatalogId, DesiredTransform);
+    }
+}
+
+void AHW_PlayerController::DeleteFurnitureItem(AHW_PlaceableFurnitureActor* FurnitureActor)
+{
+    if (!FurnitureActor || !bRoomEditModeEnabled)
+    {
+        return;
+    }
+
+    ServerDeleteFurnitureItem(FurnitureActor->PlacedItemId);
+}
+
+void AHW_PlayerController::ServerDeleteFurnitureItem_Implementation(const FGuid& ItemId)
+{
+    if (AHW_RoomManager* RoomManager = FindRoomManager())
+    {
+        RoomManager->RemoveFurnitureFromRequest(this, ItemId);
+    }
+}
+
+AHW_RoomManager* AHW_PlayerController::FindRoomManager() const
+{
+    if (!GetWorld())
+    {
+        return nullptr;
+    }
+
+    for (TActorIterator<AHW_RoomManager> It(GetWorld()); It; ++It)
+    {
+        return *It;
+    }
+
+    return nullptr;
 }
