@@ -27,6 +27,7 @@ struct FHWSessionSearchResult
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSessionSearchCompleted, const TArray<FHWSessionSearchResult>&, Results);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSessionActionCompleted, bool, bWasSuccessful);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVoiceChatEnabledChanged, bool, bEnabled);
 
 UCLASS()
 class HANGOUTWORLD_API UHW_GameInstance : public UGameInstance
@@ -39,6 +40,15 @@ public:
 
     UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Hangout|Session")
     FString LocalPlayerName = TEXT("Player");
+
+    UPROPERTY(Config, BlueprintReadOnly, EditDefaultsOnly, Category = "Hangout|Voice")
+    bool bVoiceChatEnabledByDefault = false;
+
+    UFUNCTION(BlueprintPure, Category = "Hangout|Voice")
+    bool IsVoiceChatEnabled() const { return bVoiceChatEnabledRuntime; }
+
+    UFUNCTION(BlueprintCallable, Category = "Hangout|Voice")
+    void SetVoiceChatEnabled(bool bEnabled);
 
     UFUNCTION(BlueprintCallable, Category = "Hangout|Session")
     void HostLobby(int32 MaxPublicConnections = 8, const FString& MapPath = TEXT("/Game/HangoutWorld/Maps/HangoutLobby"));
@@ -57,6 +67,9 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "Hangout|Session")
     FOnSessionActionCompleted OnJoinCompleted;
+
+    UPROPERTY(BlueprintAssignable, Category = "Hangout|Voice")
+    FOnVoiceChatEnabledChanged OnVoiceChatEnabledChanged;
 
 protected:
     FString PendingTravelMapPath;
@@ -80,4 +93,7 @@ protected:
     FDelegateHandle DestroySessionCompleteHandle;
     FDelegateHandle FindSessionsCompleteHandle;
     FDelegateHandle JoinSessionCompleteHandle;
+
+private:
+    bool bVoiceChatEnabledRuntime = false;
 };

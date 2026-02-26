@@ -11,6 +11,18 @@ namespace
 void UHW_GameInstance::Init()
 {
     Super::Init();
+    bVoiceChatEnabledRuntime = bVoiceChatEnabledByDefault;
+}
+
+void UHW_GameInstance::SetVoiceChatEnabled(bool bEnabled)
+{
+    if (bVoiceChatEnabledRuntime == bEnabled)
+    {
+        return;
+    }
+
+    bVoiceChatEnabledRuntime = bEnabled;
+    OnVoiceChatEnabledChanged.Broadcast(bVoiceChatEnabledRuntime);
 }
 
 void UHW_GameInstance::Shutdown()
