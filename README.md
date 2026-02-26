@@ -1,7 +1,7 @@
 # HangoutWorld (UE5) – Multiplayer + Phase 2 Customizable Room (Test-Ready Setup)
 
 ## Prerequisites
-- **Unreal Engine**: 5.3+ (validated target: UE 5.x).
+- **Unreal Engine**: 5.7.3 (validated target).
 - **Visual Studio 2022** with:
   - Desktop development with C++
   - Game development with C++
