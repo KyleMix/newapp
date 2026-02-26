@@ -34,6 +34,9 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hangout|UI")
     TObjectPtr<UTextRenderComponent> NameText;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hangout|Voice")
+    TObjectPtr<UTextRenderComponent> TalkingText;
+
     UPROPERTY(EditDefaultsOnly, Category = "Hangout|Emote")
     TObjectPtr<UAnimMontage> WaveMontage;
 
@@ -43,6 +46,9 @@ protected:
 private:
     UFUNCTION()
     void RefreshNameplate();
+
+    UFUNCTION()
+    void RefreshTalkingIndicator(bool bTalking);
 
     void BindPlayerStateEvents();
     void UnbindPlayerStateEvents();
